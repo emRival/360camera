@@ -16,7 +16,7 @@ dependencies:
   panorama_image: ^0.4.1
   permission_handler: ^11.3.1
   path_provider: ^2.1.5
-  gallery_saver: ^3.0.5
+  gallery_saver: ^2.3.2
   image: ^4.3.0
   flutter_spinkit: ^5.2.1
 
