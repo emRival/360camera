@@ -22,15 +22,12 @@ class _PreviewScreenState extends State<PreviewScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          PanoramaImage(
-            child: Image.file(
-              widget.imageFile,
-              fit: BoxFit.cover,
-            ),
-            onPositionChanged: (longitude, latitude) {
+          PanoramaViewer(
+            image: FileImage(widget.imageFile),
+            onViewChanged: (details) {
               setState(() {
-                _longitude = longitude;
-                _latitude = latitude;
+                _longitude = details.longitude;
+                _latitude = details.latitude;
               });
             },
           ),

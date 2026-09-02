@@ -23,7 +23,7 @@ class OrientationService {
   Stream<OrientationData> get onOrientationChanged => _controller.stream;
 
   void start() {
-    _accelSub = accelerometerEvents.listen((event) {
+    _accelSub = accelerometerEventStream().listen((event) {
       _pitch = atan2(-event.y, sqrt(event.x * event.x + event.z * event.z)) *
           (180 / pi);
       _roll = atan2(event.x, sqrt(event.y * event.y + event.z * event.z)) *
@@ -31,7 +31,7 @@ class OrientationService {
       _notify();
     });
 
-    _gyroSub = gyroscopeEvents.listen((event) {
+    _gyroSub = gyroscopeEventStream().listen((event) {
       _yaw += event.z * (180 / pi) * 0.016;
       if (_yaw > 360) _yaw -= 360;
       if (_yaw < 0) _yaw += 360;

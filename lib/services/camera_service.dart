@@ -1,5 +1,5 @@
+import 'dart:io';
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 
 class CameraService {
   CameraController? _controller;
@@ -30,13 +30,13 @@ class CameraService {
     _isInitialized = true;
   }
 
-  Future<XFile> takePicture() async {
+  Future<File> takePicture() async {
     if (_controller == null || !_isInitialized) {
       throw CameraException('Camera not initialized', 'Camera is not ready');
     }
 
     final XFile file = await _controller!.takePicture();
-    return file;
+    return File(file.path);
   }
 
   Future<void> dispose() async {

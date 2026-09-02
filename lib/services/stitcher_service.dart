@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:math';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
-import 'package:image/image.dart' as img;
 
 class StitcherService {
   Future<File> stitchImages({
@@ -11,37 +10,34 @@ class StitcherService {
     int outputHeight = 2048,
   }) async {
     final mats = <cv.Mat>[];
+    final vec = cv.VecMat();
 
     try {
       for (final image in images) {
         final bytes = await image.readAsBytes();
-        final dartImage = img.decodeImage(bytes);
-        if (dartImage == null) continue;
-
-        final mat = cv.Mat.fromBYTES(
-          dartImage.height,
-          dartImage.width,
-          dartImage.channels == 4 ? cv.CV_8UC4 : cv.CV_8UC3,
-          bytes: bytes,
-        );
+        final mat = cv.imdecode(bytes, cv.IMREAD_COLOR);
         mats.add(mat);
+        vec.add(mat);
       }
 
       if (mats.length < 2) {
         throw Exception('Need at least 2 images to stitch');
       }
 
-      final stitcher = cv.Stitcher.create(mode: cv.StitcherMode_PANORAMA);
-      final pano = cv.Mat();
-      final status = stitcher.stitch(mats, pano);
+      final stitcher = cv.Stitcher.create(mode: cv.StitcherMode.PANORAMA);
+      final (status, pano) = stitcher.stitch(vec);
 
-      if (status != cv.Stitcher_OK) {
+      if (status != cv.StitcherStatus.OK) {
         throw Exception('Stitching failed with status: $status');
       }
 
       final equirect = _projectToEquirectangular(pano, outputWidth, outputHeight);
 
-      final pngBytes = cv.imencode('.png', equirect);
+      final (ok, pngBytes) = cv.imencode('.png', equirect);
+      if (!ok) {
+        throw Exception('Failed to encode PNG');
+      }
+
       final outputFile = File(outputPath);
       await outputFile.writeAsBytes(pngBytes);
 
@@ -54,21 +50,22 @@ class StitcherService {
       for (final mat in mats) {
         mat.dispose();
       }
+      vec.dispose();
     }
   }
 
   cv.Mat _projectToEquirectangular(cv.Mat panorama, int width, int height) {
-    final result = cv.Mat.zeros(height, width, cv.CV_8UC3);
+    final result = cv.Mat.zeros(height, width, cv.MatType.CV_8UC3);
     final srcRows = panorama.rows;
     final srcCols = panorama.cols;
 
-    final double thetaMax = pi;
-    final double phiMax = pi / 2;
+    const double thetaMax = pi;
+    const double phiMax = pi / 2;
 
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         final double theta = (x / width) * 2 * thetaMax - thetaMax;
-        final double phi = (y / height) * phiMax - phiMax / 2;
+        final double phi = (y / height) * phiMax - (phiMax / 2);
 
         final double srcX = (theta / pi + 1.0) * 0.5 * srcCols;
         final double srcY = (0.5 - phi / pi) * srcRows;
@@ -76,8 +73,12 @@ class StitcherService {
         final int srcXi = srcX.clamp(0, srcCols - 1).toInt();
         final int srcYi = srcY.clamp(0, srcRows - 1).toInt();
 
-        final pixel = panorama.at<Vec3b>(srcYi, srcXi);
-        result.set(y, x, pixel);
+        final pixel = panorama.at<cv.Vec3b>(srcYi, srcXi);
+        result.setVec(
+          y,
+          x,
+          cv.Vec3b(pixel.val1, pixel.val2, pixel.val3),
+        );
       }
     }
 

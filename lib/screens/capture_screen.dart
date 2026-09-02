@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/camera_service.dart';
@@ -389,16 +390,25 @@ class _GuidePainter extends CustomPainter {
 
     final dotPaint = Paint()
       ..style = PaintingStyle.fill
-      ..color = Colors.greenAccent.withOpacity(0.6);
+      ..color = Colors.greenAccent.withValues(alpha: 0.6);
 
     final activeDotPaint = Paint()
       ..style = PaintingStyle.fill
-      ..color = Colors.yellowAccent.withOpacity(0.9);
+      ..color = Colors.yellowAccent.withValues(alpha: 0.9);
+
+    final takenDotPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.blueAccent.withValues(alpha: 0.8);
 
     final linePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..color = Colors.white24;
+
+    final haloPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = Colors.yellowAccent.withValues(alpha: 0.5);
 
     final centerX = size.width / 2;
     final centerY = size.height / 2;
@@ -417,21 +427,21 @@ class _GuidePainter extends CustomPainter {
 
       final isActive = i == currentPhoto;
       final isTaken = i < currentPhoto;
+      final paint = isActive
+          ? activeDotPaint
+          : (isTaken ? takenDotPaint : dotPaint);
 
       canvas.drawCircle(
         Offset(dotX, dotY),
         isActive ? 8.0 : 5.0,
-        isActive ? activeDotPaint : (isTaken ? Paint()..color = Colors.blue : dotPaint),
+        paint,
       );
 
       if (isActive) {
         canvas.drawCircle(
           Offset(dotX, dotY),
           14.0,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2
-            ..color = Colors.yellowAccent.withOpacity(0.5),
+          haloPaint,
         );
       }
     }

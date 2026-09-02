@@ -15,23 +15,6 @@ class _ResultScreenState extends State<ResultScreen> {
   bool _isSaving = false;
   bool _isSaved = false;
   String? _error;
-  String _savedPath = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _getFileInfo();
-  }
-
-  Future<void> _getFileInfo() async {
-    final exists = await widget.imageFile.exists();
-    if (exists) {
-      final size = await widget.imageFile.length();
-      setState(() {
-        _savedPath = widget.imageFile.path;
-      });
-    }
-  }
 
   Future<void> _saveToGallery() async {
     setState(() {
