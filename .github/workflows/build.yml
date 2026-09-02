@@ -7,6 +7,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,6 +29,7 @@ jobs:
         with:
           flutter-version: '3.47.2'
           channel: 'stable'
+          cache: true
 
       - name: Flutter info
         run: flutter doctor -v
@@ -38,7 +42,6 @@ jobs:
 
       - name: Run tests
         run: flutter test
-        continue-on-error: true
 
       - name: Build APK
         run: flutter build apk --release --split-per-abi
@@ -46,22 +49,16 @@ jobs:
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: apk-release
-          path: |
-            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-            build/app/outputs/flutter-apk/app-x86_64-release.apk
+          name: 360picture-apks
+          path: build/app/outputs/flutter-apk/*.apk
 
       - name: Create Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: Build ${{ github.run_number }}
-          files: |
-            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-            build/app/outputs/flutter-apk/app-x86_64-release.apk
+          tag_name: v1.0.${{ github.run_number }}
+          name: 360 Picture v1.0.${{ github.run_number }}
+          files: build/app/outputs/flutter-apk/*.apk
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

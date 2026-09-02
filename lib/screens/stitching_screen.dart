@@ -15,9 +15,10 @@ class StitchingScreen extends StatefulWidget {
 }
 
 class _StitchingScreenState extends State<StitchingScreen> {
-  String _status = 'Preparing images...';
-  double _progress = 0.0;
+  String _status = 'Initializing stitcher engine...';
+  double _progress = 0.05;
   String? _error;
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -26,47 +27,58 @@ class _StitchingScreenState extends State<StitchingScreen> {
   }
 
   Future<void> _startStitching() async {
-    try {
-      setState(() {
-        _status = 'Stitching ${widget.images.length} images...';
-        _progress = 0.2;
-      });
+    setState(() {
+      _error = null;
+      _isProcessing = true;
+      _status = 'Preparing ${widget.images.length} photos...';
+      _progress = 0.05;
+    });
 
+    try {
       final outputPath = await ImageUtils.getOutputPath();
       final stitcher = StitcherService();
-
-      setState(() {
-        _status = 'Processing panorama...';
-        _progress = 0.5;
-      });
 
       final result = await stitcher.stitchImages(
         images: widget.images,
         outputPath: outputPath,
-        outputWidth: 4096,
-        outputHeight: 2048,
+        outputWidth: 2048,
+        outputHeight: 1024,
+        onProgress: (msg, prog) {
+          if (mounted) {
+            setState(() {
+              _status = msg;
+              _progress = prog;
+            });
+          }
+        },
       );
 
-      setState(() {
-        _status = 'Stitching complete!';
-        _progress = 1.0;
-      });
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PreviewScreen(imageFile: result),
-          ),
-        );
+        setState(() {
+          _status = 'Success! Opening 360 viewer...';
+          _progress = 1.0;
+          _isProcessing = false;
+        });
+
+        await Future.delayed(const Duration(milliseconds: 400));
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PreviewScreen(imageFile: result),
+            ),
+          );
+        }
       }
     } catch (e) {
-      setState(() {
-        _error = 'Stitching failed: $e';
-        _status = 'Error occurred';
-      });
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _error = e.toString().replaceFirst('Exception: ', '');
+          _status = 'Stitching failed';
+        });
+      }
     }
   }
 
@@ -76,96 +88,128 @@ class _StitchingScreenState extends State<StitchingScreen> {
       backgroundColor: const Color(0xFF1A1A2E),
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
+          padding: const EdgeInsets.symmetric(horizontal: 28),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (_error == null) ...[
-                const SpinKitFoldingCube(
-                  color: Color(0xFF1A73E8),
-                  size: 80,
+                const SpinKitCubeGrid(
+                  color: Color(0xFF00D2C4),
+                  size: 72,
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 36),
                 const Text(
-                  'Creating your 360° panorama',
+                  'Stitching 360° Panorama',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                   ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _status,
-                  style: const TextStyle(color: Colors.white70, fontSize: 16),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
+                Text(
+                  _status,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 28),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: LinearProgressIndicator(
                     value: _progress,
                     backgroundColor: Colors.white12,
-                    valueColor: const AlwaysStoppedAnimation(Color(0xFF1A73E8)),
+                    valueColor: const AlwaysStoppedAnimation(Color(0xFF00D2C4)),
                     minHeight: 8,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Text(
                   '${(_progress * 100).toInt()}%',
                   style: const TextStyle(
-                    color: Colors.white54,
+                    color: Color(0xFF00D2C4),
                     fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 32),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white12),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline, color: Colors.white54, size: 20),
+                      const Icon(Icons.auto_awesome, color: Color(0xFF00D2C4), size: 22),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Processing ${widget.images.length} images into a 360° panoramic photo. This may take a few moments.',
-                          style: const TextStyle(color: Colors.white54, fontSize: 13),
+                          'OpenCV is aligning ${widget.images.length} frames into a seamless spherical equirectangular panorama.',
+                          style: const TextStyle(color: Colors.white60, fontSize: 13),
                         ),
                       ),
                     ],
                   ),
                 ),
               ] else ...[
-                const Icon(Icons.error_outline, color: Colors.redAccent, size: 64),
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.redAccent.withValues(alpha: 0.15),
+                  ),
+                  child: const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+                ),
                 const SizedBox(height: 24),
                 const Text(
-                  'Oops!',
+                  'Stitching Unsuccessful',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 24,
+                    fontSize: 22,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  style: const TextStyle(color: Colors.white70),
-                  textAlign: TextAlign.center,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
                 const SizedBox(height: 32),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    OutlinedButton(
+                    OutlinedButton.icon(
                       onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Back to Camera'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white,
                         side: const BorderSide(color: Colors.white38),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                       ),
-                      child: const Text('Go Back'),
+                    ),
+                    const SizedBox(width: 16),
+                    ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : _startStitching,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1A73E8),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      ),
                     ),
                   ],
                 ),

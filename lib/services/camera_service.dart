@@ -5,11 +5,15 @@ class CameraService {
   CameraController? _controller;
   List<CameraDescription> _cameras = [];
   bool _isInitialized = false;
+  FlashMode _flashMode = FlashMode.off;
+  bool _isExposureLocked = false;
 
   CameraController? get controller => _controller;
-  bool get isInitialized => _isInitialized;
+  bool get isInitialized => _isInitialized && _controller != null && _controller!.value.isInitialized;
+  FlashMode get flashMode => _flashMode;
+  bool get isExposureLocked => _isExposureLocked;
 
-  Future<void> initialize() async {
+  Future<void> initialize({ResolutionPreset preset = ResolutionPreset.high}) async {
     _cameras = await availableCameras();
     if (_cameras.isEmpty) {
       throw CameraException('No cameras found', 'No cameras available on device');
@@ -20,28 +24,71 @@ class CameraService {
       orElse: () => _cameras.first,
     );
 
-    _controller = CameraController(
+    final controller = CameraController(
       backCamera,
-      ResolutionPreset.high,
+      preset,
       enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.jpeg,
     );
 
-    await _controller!.initialize();
+    await controller.initialize();
+
+    try {
+      await controller.setFlashMode(_flashMode);
+      await controller.setFocusMode(FocusMode.auto);
+    } catch (_) {
+      // Some devices may not support these settings
+    }
+
+    _controller = controller;
     _isInitialized = true;
   }
 
   Future<File> takePicture() async {
-    if (_controller == null || !_isInitialized) {
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized) {
       throw CameraException('Camera not initialized', 'Camera is not ready');
     }
 
-    final XFile file = await _controller!.takePicture();
+    final XFile file = await ctrl.takePicture();
     return File(file.path);
+  }
+
+  Future<void> toggleFlash() async {
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+
+    final newMode = _flashMode == FlashMode.off
+        ? FlashMode.auto
+        : (_flashMode == FlashMode.auto ? FlashMode.torch : FlashMode.off);
+
+    try {
+      await ctrl.setFlashMode(newMode);
+      _flashMode = newMode;
+    } catch (_) {}
+  }
+
+  Future<void> toggleExposureLock() async {
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+
+    try {
+      if (_isExposureLocked) {
+        await ctrl.setExposureMode(ExposureMode.auto);
+        _isExposureLocked = false;
+      } else {
+        await ctrl.setExposureMode(ExposureMode.locked);
+        _isExposureLocked = true;
+      }
+    } catch (_) {}
   }
 
   Future<void> dispose() async {
     _isInitialized = false;
-    await _controller?.dispose();
+    final ctrl = _controller;
     _controller = null;
+    if (ctrl != null) {
+      await ctrl.dispose();
+    }
   }
 }

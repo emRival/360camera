@@ -15,6 +15,8 @@ class PreviewScreen extends StatefulWidget {
 class _PreviewScreenState extends State<PreviewScreen> {
   double _longitude = 0;
   double _latitude = 0;
+  bool _isFlatView = false;
+  SensorControl _sensorControl = SensorControl.none;
 
   @override
   Widget build(BuildContext context) {
@@ -22,16 +24,31 @@ class _PreviewScreenState extends State<PreviewScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          PanoramaViewer(
-            image: FileImage(widget.imageFile),
-            onViewChanged: (details) {
-              setState(() {
-                _longitude = details.longitude;
-                _latitude = details.latitude;
-              });
-            },
-          ),
+          // 360 Viewer or Flat Image View
+          if (!_isFlatView)
+            PanoramaViewer(
+              image: FileImage(widget.imageFile),
+              sensorControl: _sensorControl,
+              onViewChanged: (details) {
+                setState(() {
+                  _longitude = details.longitude;
+                  _latitude = details.latitude;
+                });
+              },
+            )
+          else
+            InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Center(
+                child: Image.file(
+                  widget.imageFile,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
 
+          // Top Header Bar
           Positioned(
             top: 0,
             left: 0,
@@ -43,7 +60,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
                 right: 8,
                 bottom: 12,
               ),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -58,33 +75,66 @@ class _PreviewScreenState extends State<PreviewScreen> {
                   ),
                   const Expanded(
                     child: Text(
-                      'Preview 360°',
+                      '360° Interactive Viewer',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 20,
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(width: 48),
+                  // Gyro toggle
+                  if (!_isFlatView)
+                    IconButton(
+                      icon: Icon(
+                        _sensorControl == SensorControl.orientation
+                            ? Icons.screen_rotation
+                            : Icons.screen_lock_rotation,
+                        color: _sensorControl == SensorControl.orientation
+                            ? const Color(0xFF00D2C4)
+                            : Colors.white70,
+                      ),
+                      tooltip: 'Gyro Look-around',
+                      onPressed: () {
+                        setState(() {
+                          _sensorControl = _sensorControl == SensorControl.orientation
+                              ? SensorControl.none
+                              : SensorControl.orientation;
+                        });
+                      },
+                    ),
+                  // Flat vs 360 toggle
+                  IconButton(
+                    icon: Icon(
+                      _isFlatView ? Icons.threed_rotation : Icons.crop_original,
+                      color: Colors.white70,
+                    ),
+                    tooltip: _isFlatView ? 'Switch to 360 Sphere' : 'Switch to Flat View',
+                    onPressed: () {
+                      setState(() {
+                        _isFlatView = !_isFlatView;
+                      });
+                    },
+                  ),
                 ],
               ),
             ),
           ),
 
+          // Bottom Controls & Export Button
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: Container(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).padding.bottom + 24,
-                left: 24,
-                right: 24,
-                top: 20,
+                bottom: MediaQuery.of(context).padding.bottom + 20,
+                left: 20,
+                right: 20,
+                top: 16,
               ),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
@@ -92,54 +142,58 @@ class _PreviewScreenState extends State<PreviewScreen> {
                 ),
               ),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
+                  if (!_isFlatView)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.explore, color: Color(0xFF00D2C4), size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Yaw: ${_longitude.toStringAsFixed(0)}°  |  Pitch: ${_latitude.toStringAsFixed(0)}°',
+                            style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.explore, color: Colors.white54, size: 16),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Yaw: ${_longitude.toStringAsFixed(1)}° | Pitch: ${_latitude.toStringAsFixed(1)}°',
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Drag to look around in 360°',
-                    style: TextStyle(color: Colors.white54, fontSize: 13),
+                  const SizedBox(height: 10),
+                  Text(
+                    _isFlatView ? 'Pinch to zoom, drag to pan' : 'Drag screen or move device to look 360°',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
                   ),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
-                    height: 56,
+                    height: 52,
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.pushReplacement(
+                        Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => ResultScreen(imageFile: widget.imageFile),
                           ),
                         );
                       },
-                      icon: const Icon(Icons.save_alt, size: 24),
+                      icon: const Icon(Icons.save_alt, size: 22),
                       label: const Text(
-                        'Save as PNG',
-                        style: TextStyle(fontSize: 18),
+                        'Save & Export Panorama',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1A73E8),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(14),
                         ),
+                        elevation: 6,
                       ),
                     ),
                   ),
