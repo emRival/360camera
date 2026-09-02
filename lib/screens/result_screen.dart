@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:gallery_saver/gallery_saver.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:gal/gal.dart';
 
 class ResultScreen extends StatefulWidget {
   final File imageFile;
@@ -41,14 +40,14 @@ class _ResultScreenState extends State<ResultScreen> {
     });
 
     try {
-      final result = await GallerySaver.saveImage(
-        widget.imageFile.path,
-        albumName: '360 Pictures',
-      );
+      if (!await Gal.hasAccess()) {
+        await Gal.requestAccess();
+      }
+      await Gal.putImage(widget.imageFile.path);
 
       setState(() {
         _isSaving = false;
-        _isSaved = result ?? false;
+        _isSaved = true;
       });
     } catch (e) {
       setState(() {

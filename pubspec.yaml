@@ -4,19 +4,19 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.4.3 <4.0.0'
+  sdk: '>=3.10.0 <4.0.0'
   flutter: '>=3.13.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  camera: ^0.11.0+2
+  camera: ^0.12.0+2
   sensors_plus: ^6.1.0
   opencv_dart: ^2.2.2
   panorama_image: 0.0.1
-  permission_handler: ^11.3.1
-  path_provider: ^2.1.5
-  gallery_saver: ^2.3.2
+  permission_handler: ^13.0.1
+  path_provider: ^2.1.6
+  gal: ^2.3.3
   image: ^4.3.0
   flutter_spinkit: ^5.2.2
 
