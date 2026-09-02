@@ -1,0 +1,29 @@
+name: picture360
+description: A Flutter app to capture 360-degree panoramic photos and export as equirectangular PNG.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.13.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: ^0.11.0+2
+  sensors_plus: ^6.1.0
+  opencv_dart: ^1.0.6
+  panorama_image: ^0.4.1
+  permission_handler: ^11.3.1
+  path_provider: ^2.1.5
+  gallery_saver: ^3.0.5
+  image: ^4.3.0
+  flutter_spinkit: ^5.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
