@@ -16,7 +16,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
   double _longitude = 0;
   double _latitude = 0;
   bool _isFlatView = false;
-  SensorControl _sensorControl = SensorControl.none;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +27,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
           if (!_isFlatView)
             PanoramaViewer(
               image: FileImage(widget.imageFile),
-              sensorControl: _sensorControl,
               onViewChanged: (details) {
                 setState(() {
                   _longitude = details.longitude;
@@ -84,26 +82,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  // Gyro toggle
-                  if (!_isFlatView)
-                    IconButton(
-                      icon: Icon(
-                        _sensorControl == SensorControl.orientation
-                            ? Icons.screen_rotation
-                            : Icons.screen_lock_rotation,
-                        color: _sensorControl == SensorControl.orientation
-                            ? const Color(0xFF00D2C4)
-                            : Colors.white70,
-                      ),
-                      tooltip: 'Gyro Look-around',
-                      onPressed: () {
-                        setState(() {
-                          _sensorControl = _sensorControl == SensorControl.orientation
-                              ? SensorControl.none
-                              : SensorControl.orientation;
-                        });
-                      },
-                    ),
                   // Flat vs 360 toggle
                   IconButton(
                     icon: Icon(
@@ -166,7 +144,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
                     ),
                   const SizedBox(height: 10),
                   Text(
-                    _isFlatView ? 'Pinch to zoom, drag to pan' : 'Drag screen or move device to look 360°',
+                    _isFlatView ? 'Pinch to zoom, drag to pan' : 'Drag screen to look around in 360°',
                     style: const TextStyle(color: Colors.white54, fontSize: 12),
                   ),
                   const SizedBox(height: 16),

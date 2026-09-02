@@ -63,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         content: const SingleChildScrollView(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: minAxisSize,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _TipItem(
@@ -105,6 +105,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  static const minAxisSize = MainAxisSize.min;
 
   @override
   Widget build(BuildContext context) {
@@ -468,15 +470,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            Radio<CaptureMode>(
-              value: config.mode,
-              groupValue: _selectedConfig.mode,
-              activeColor: const Color(0xFF00D2C4),
-              onChanged: (_) {
-                setState(() {
-                  _selectedConfig = config;
-                });
-              },
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? const Color(0xFF00D2C4) : Colors.white38,
+                  width: 2,
+                ),
+              ),
+              child: isSelected
+                  ? Center(
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFF00D2C4),
+                        ),
+                      ),
+                    )
+                  : null,
             ),
           ],
         ),
