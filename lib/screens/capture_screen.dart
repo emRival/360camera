@@ -22,7 +22,7 @@ class CaptureScreen extends StatefulWidget {
   State<CaptureScreen> createState() => _CaptureScreenState();
 }
 
-class _CaptureScreenState extends State<CaptureScreen> {
+class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProviderStateMixin {
   final CameraService _cameraService = CameraService();
   final OrientationService _orientationService = OrientationService();
   final List<File> _capturedImages = [];
@@ -33,12 +33,18 @@ class _CaptureScreenState extends State<CaptureScreen> {
   bool _isInitialized = false;
   bool _permissionDenied = false;
   bool _autoCaptureEnabled = true;
-  DateTime _lastAutoCaptureTime = DateTime.now();
+
+  // Dwell / Hold-steady timer (1.2 seconds hold to capture)
+  static const int _holdDurationMs = 1200;
+  DateTime? _alignedStartTime;
+  double _alignmentProgress = 0.0;
+  Timer? _dwellTimer;
+  bool _showFlashEffect = false;
 
   OrientationData _orientation = const OrientationData();
-  String _statusMessage = 'Align the dot with the center ring';
-  double _targetYaw = 0;
-  double _targetPitch = 0;
+  String _statusMessage = 'Aim at the glowing dot to begin';
+  double _targetYaw = 0.0;
+  double _targetPitch = 0.0;
 
   @override
   void initState() {
@@ -53,7 +59,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
       if (mounted) {
         setState(() {
           _permissionDenied = true;
-          _statusMessage = 'Camera permission is required to capture photos';
+          _statusMessage = 'Camera permission is required';
         });
       }
       return;
@@ -62,12 +68,22 @@ class _CaptureScreenState extends State<CaptureScreen> {
     try {
       await _cameraService.initialize(preset: ResolutionPreset.high);
       _orientationService.start();
+
+      // Reset initial yaw to 0 so the first photo is directly where the user points!
+      _orientationService.resetYaw(0.0);
+
       _orientationService.onOrientationChanged.listen((data) {
         if (!mounted) return;
         setState(() {
           _orientation = data;
         });
-        _checkAlignment(data);
+        _updateAlignmentTimer();
+      });
+
+      // Start periodic timer for smooth countdown ring updates (60fps)
+      _dwellTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
+        if (!mounted) return;
+        _updateAlignmentTimer();
       });
 
       if (mounted) {
@@ -89,6 +105,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
     if (_currentRow >= widget.config.rowTiltAngles.length) return;
     _targetYaw = widget.config.anglePerPhoto(_currentRow) * _currentPhotoInRow;
     _targetPitch = widget.config.rowTiltAngles[_currentRow];
+    _alignedStartTime = null;
+    _alignmentProgress = 0.0;
   }
 
   double _getDeltaYaw() {
@@ -109,18 +127,37 @@ class _CaptureScreenState extends State<CaptureScreen> {
   bool _isTargetAligned() {
     final dyaw = _getDeltaYaw().abs();
     final dpitch = _getDeltaPitch().abs();
-    return dyaw <= 5.0 && dpitch <= 6.0;
+    return dyaw <= 6.5 && dpitch <= 7.5;
   }
 
-  void _checkAlignment(OrientationData data) {
+  void _updateAlignmentTimer() {
     if (!_isInitialized || _isCapturing) return;
     if (_currentRow >= widget.config.rowTiltAngles.length) return;
 
     if (_isTargetAligned()) {
       final now = DateTime.now();
-      if (_autoCaptureEnabled && now.difference(_lastAutoCaptureTime).inMilliseconds > 1500) {
-        _lastAutoCaptureTime = now;
+      _alignedStartTime ??= now;
+
+      final elapsedMs = now.difference(_alignedStartTime!).inMilliseconds;
+      final progress = (elapsedMs / _holdDurationMs).clamp(0.0, 1.0);
+
+      if (progress != _alignmentProgress) {
+        setState(() {
+          _alignmentProgress = progress;
+        });
+      }
+
+      if (_autoCaptureEnabled && progress >= 1.0) {
+        _alignedStartTime = null;
+        _alignmentProgress = 0.0;
         _capturePhoto();
+      }
+    } else {
+      if (_alignedStartTime != null || _alignmentProgress > 0.0) {
+        setState(() {
+          _alignedStartTime = null;
+          _alignmentProgress = 0.0;
+        });
       }
     }
   }
@@ -129,11 +166,18 @@ class _CaptureScreenState extends State<CaptureScreen> {
     if (_isCapturing || !_isInitialized) return;
     if (_currentRow >= widget.config.rowTiltAngles.length) return;
 
-    HapticFeedback.mediumImpact();
-
+    // Trigger visual shutter flash and haptic feedback
+    HapticFeedback.heavyImpact();
     setState(() {
+      _showFlashEffect = true;
       _isCapturing = true;
       _statusMessage = 'Capturing frame...';
+    });
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        setState(() => _showFlashEffect = false);
+      }
     });
 
     try {
@@ -145,6 +189,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
       setState(() {
         _currentPhotoInRow++;
         _isCapturing = false;
+        _alignedStartTime = null;
+        _alignmentProgress = 0.0;
 
         if (_currentPhotoInRow >= widget.config.photosPerRow) {
           _currentPhotoInRow = 0;
@@ -155,10 +201,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
             _processImages();
             return;
           }
-          _statusMessage = 'Row ${_currentRow + 1}/${widget.config.totalRows} - Align dot';
+          _statusMessage =
+              'Row ${_currentRow + 1}/${widget.config.totalRows} - Move to next target';
         } else {
           _statusMessage =
-              'Photo ${_currentPhotoInRow + 1}/${widget.config.photosPerRow} - Align dot';
+              'Photo ${_currentPhotoInRow + 1}/${widget.config.photosPerRow} - Rotate to next dot';
         }
         _updateTarget();
       });
@@ -186,7 +233,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
         _currentPhotoInRow = widget.config.photosPerRow - 1;
       }
       _updateTarget();
-      _statusMessage = 'Removed previous photo';
+      _statusMessage = 'Removed last photo';
     });
   }
 
@@ -211,6 +258,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
   @override
   void dispose() {
+    _dwellTimer?.cancel();
     _cameraService.dispose();
     _orientationService.dispose();
     super.dispose();
@@ -278,22 +326,33 @@ class _CaptureScreenState extends State<CaptureScreen> {
             )
           else
             const Center(
-              child: CircularProgressIndicator(color: Color(0xFF00D2C4)),
+              child: CircularProgressIndicator(color: Color(0xFF00E5FF)),
             ),
 
-          // Interactive 360 Guidance Overlay
+          // Interactive 360 Photosphere Target Overlay
           if (_isInitialized && _currentRow < widget.config.rowTiltAngles.length)
             CustomPaint(
               painter: _PhotosphereGuidePainter(
                 deltaYaw: deltaYaw,
                 deltaPitch: deltaPitch,
                 isAligned: isAligned,
+                alignmentProgress: _alignmentProgress,
+                photoNumber: _currentPhotoInRow + 1,
+                totalInRow: widget.config.photosPerRow,
                 isCapturing: _isCapturing,
               ),
               size: Size.infinite,
             ),
 
-          // Top App Bar & Progress
+          // Shutter Flash Animation Effect
+          if (_showFlashEffect)
+            Positioned.fill(
+              child: Container(
+                color: Colors.white.withValues(alpha: 0.7),
+              ),
+            ),
+
+          // Top App Bar, Progress & Mini Radar
           Positioned(
             top: 0,
             left: 0,
@@ -317,11 +376,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
                   Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
+                        icon: const Icon(Icons.close, color: Colors.white, size: 28),
                         onPressed: () => Navigator.pop(context),
                       ),
                       Expanded(
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               widget.config.title,
@@ -338,7 +398,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
                           ],
                         ),
                       ),
-                      // Flash button
+
+                      // Mini 360 Radar Compass
+                      _buildMiniRadar(),
+
+                      const SizedBox(width: 8),
+
+                      // Flash toggle button
                       IconButton(
                         icon: Icon(
                           _cameraService.flashMode == FlashMode.torch
@@ -366,7 +432,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                           child: LinearProgressIndicator(
                             value: totalProgress,
                             backgroundColor: Colors.white24,
-                            valueColor: const AlwaysStoppedAnimation(Color(0xFF00D2C4)),
+                            valueColor: const AlwaysStoppedAnimation(Color(0xFF00E5FF)),
                             minHeight: 6,
                           ),
                         ),
@@ -387,41 +453,52 @@ class _CaptureScreenState extends State<CaptureScreen> {
             ),
           ),
 
-          // Alignment Direction Guidance Pill
+          // Prominent Direction Guidance Pill
           if (_isInitialized && _currentRow < widget.config.rowTiltAngles.length)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 76,
-              left: 0,
-              right: 0,
+              top: MediaQuery.of(context).padding.top + 74,
+              left: 16,
+              right: 16,
               child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                   decoration: BoxDecoration(
                     color: isAligned
-                        ? Colors.greenAccent.withValues(alpha: 0.85)
-                        : Colors.black.withValues(alpha: 0.65),
-                    borderRadius: BorderRadius.circular(20),
+                        ? const Color(0xFF00E676)
+                        : Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(24),
                     border: Border.all(
-                      color: isAligned ? Colors.greenAccent : Colors.white24,
-                      width: 1.5,
+                      color: isAligned ? const Color(0xFF00E676) : const Color(0xFFFFB300),
+                      width: 2.0,
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (isAligned ? const Color(0xFF00E676) : Colors.black)
+                            .withValues(alpha: 0.4),
+                        blurRadius: 12,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        isAligned ? Icons.check_circle : Icons.navigation,
-                        color: isAligned ? Colors.black : const Color(0xFF00D2C4),
-                        size: 16,
+                        isAligned
+                            ? Icons.camera
+                            : (deltaYaw > 0 ? Icons.arrow_forward : Icons.arrow_back),
+                        color: isAligned ? Colors.black : const Color(0xFFFFB300),
+                        size: 18,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         isAligned
-                            ? 'ALIGNED - HOLD STEADY'
+                            ? 'HOLD STEADY... ${((1.0 - _alignmentProgress) * (_holdDurationMs / 1000)).toStringAsFixed(1)}s'
                             : _getGuidanceText(deltaYaw, deltaPitch),
                         style: TextStyle(
                           color: isAligned ? Colors.black : Colors.white,
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.5,
                         ),
@@ -453,11 +530,10 @@ class _CaptureScreenState extends State<CaptureScreen> {
               ),
               child: Column(
                 children: [
-                  // Status message
                   Text(
                     _statusMessage,
                     style: TextStyle(
-                      color: isAligned ? Colors.greenAccent : Colors.white70,
+                      color: isAligned ? const Color(0xFF00E676) : Colors.white70,
                       fontSize: 13,
                       fontWeight: isAligned ? FontWeight.w600 : FontWeight.normal,
                     ),
@@ -477,39 +553,45 @@ class _CaptureScreenState extends State<CaptureScreen> {
                             : null,
                       ),
 
-                      // Reset yaw / center button
+                      // Reset 0° heading button
                       IconButton(
                         icon: const Icon(Icons.compass_calibration, color: Colors.white70, size: 28),
-                        tooltip: 'Reset Center (0°)',
+                        tooltip: 'Reset Heading (0°)',
                         onPressed: () {
                           _orientationService.resetYaw(0.0);
                           _updateTarget();
                           HapticFeedback.lightImpact();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Target heading re-centered!'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
                         },
                       ),
 
-                      // Main Capture Shutter Button
+                      // Main Shutter Button
                       GestureDetector(
                         onTap: _isCapturing ? null : _capturePhoto,
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: 76,
-                          height: 76,
+                          duration: const Duration(milliseconds: 150),
+                          width: 78,
+                          height: 78,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: isAligned ? Colors.greenAccent : Colors.white,
+                              color: isAligned ? const Color(0xFF00E676) : Colors.white,
                               width: 4,
                             ),
                             color: isAligned
-                                ? Colors.greenAccent.withValues(alpha: 0.3)
+                                ? const Color(0xFF00E676).withValues(alpha: 0.3)
                                 : Colors.white24,
                             boxShadow: isAligned
                                 ? [
                                     BoxShadow(
-                                      color: Colors.greenAccent.withValues(alpha: 0.5),
-                                      blurRadius: 16,
-                                      spreadRadius: 2,
+                                      color: const Color(0xFF00E676).withValues(alpha: 0.6),
+                                      blurRadius: 18,
+                                      spreadRadius: 3,
                                     )
                                   ]
                                 : [],
@@ -525,30 +607,30 @@ class _CaptureScreenState extends State<CaptureScreen> {
                                     ),
                                   )
                                 : Container(
-                                    width: 56,
-                                    height: 56,
+                                    width: 58,
+                                    height: 58,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: isAligned ? Colors.greenAccent : Colors.white,
+                                      color: isAligned ? const Color(0xFF00E676) : Colors.white,
                                     ),
                                     child: Icon(
                                       Icons.camera_alt,
                                       color: isAligned ? Colors.black : const Color(0xFF1A1A2E),
-                                      size: 28,
+                                      size: 30,
                                     ),
                                   ),
                           ),
                         ),
                       ),
 
-                      // Auto-capture toggle button
+                      // Auto-capture toggle
                       IconButton(
                         icon: Icon(
                           _autoCaptureEnabled ? Icons.bolt : Icons.flash_off,
-                          color: _autoCaptureEnabled ? const Color(0xFF00D2C4) : Colors.white38,
+                          color: _autoCaptureEnabled ? const Color(0xFF00E5FF) : Colors.white38,
                           size: 28,
                         ),
-                        tooltip: 'Auto-capture on alignment',
+                        tooltip: _autoCaptureEnabled ? 'Auto-capture ON' : 'Auto-capture OFF',
                         onPressed: () {
                           setState(() {
                             _autoCaptureEnabled = !_autoCaptureEnabled;
@@ -556,12 +638,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
                         },
                       ),
 
-                      // Finish & Stitch button (available once >= 2 photos taken)
+                      // Finish & Stitch button
                       IconButton(
                         icon: Icon(
                           Icons.done_all,
                           color: _capturedImages.length >= 2
-                              ? Colors.greenAccent
+                              ? const Color(0xFF00E676)
                               : Colors.white24,
                           size: 28,
                         ),
@@ -579,21 +661,41 @@ class _CaptureScreenState extends State<CaptureScreen> {
     );
   }
 
+  Widget _buildMiniRadar() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.black.withValues(alpha: 0.6),
+        border: Border.all(color: Colors.white24, width: 1.5),
+      ),
+      child: CustomPaint(
+        painter: _RadarPainter(
+          photosPerRow: widget.config.photosPerRow,
+          currentPhoto: _currentPhotoInRow,
+          capturedCount: _currentPhotoInRow,
+          currentYaw: _orientation.yaw,
+        ),
+      ),
+    );
+  }
+
   String _getGuidanceText(double dyaw, double dpitch) {
     final List<String> directions = [];
     if (dyaw > 5) {
-      directions.add('Rotate Right ${dyaw.toStringAsFixed(0)}°');
+      directions.add('ROTATE RIGHT 👉 ${dyaw.toStringAsFixed(0)}°');
     } else if (dyaw < -5) {
-      directions.add('Rotate Left ${(-dyaw).toStringAsFixed(0)}°');
+      directions.add('👈 ROTATE LEFT ${(-dyaw).toStringAsFixed(0)}°');
     }
 
     if (dpitch > 6) {
-      directions.add('Tilt Up ${dpitch.toStringAsFixed(0)}°');
+      directions.add('TILT UP 👆 ${dpitch.toStringAsFixed(0)}°');
     } else if (dpitch < -6) {
-      directions.add('Tilt Down ${(-dpitch).toStringAsFixed(0)}°');
+      directions.add('👇 TILT DOWN ${(-dpitch).toStringAsFixed(0)}°');
     }
 
-    return directions.isEmpty ? 'Center Target' : directions.join(' • ');
+    return directions.isEmpty ? 'ALIGNED! HOLD STEADY' : directions.join(' • ');
   }
 }
 
@@ -601,12 +703,18 @@ class _PhotosphereGuidePainter extends CustomPainter {
   final double deltaYaw;
   final double deltaPitch;
   final bool isAligned;
+  final double alignmentProgress;
+  final int photoNumber;
+  final int totalInRow;
   final bool isCapturing;
 
   _PhotosphereGuidePainter({
     required this.deltaYaw,
     required this.deltaPitch,
     required this.isAligned,
+    required this.alignmentProgress,
+    required this.photoNumber,
+    required this.totalInRow,
     required this.isCapturing,
   });
 
@@ -615,17 +723,19 @@ class _PhotosphereGuidePainter extends CustomPainter {
     final centerX = size.width / 2;
     final centerY = size.height / 2;
 
-    // Center Crosshairs / Reticle
+    // --- 1. Center Reticle (Viewfinder Bullseye) ---
+    const reticleRadius = 44.0;
+
+    // Outer viewfinder ring
     final reticlePaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = isAligned ? 3.0 : 1.8
-      ..color = isAligned ? Colors.greenAccent : Colors.white70;
+      ..strokeWidth = isAligned ? 3.5 : 2.0
+      ..color = isAligned ? const Color(0xFF00E676) : Colors.white70;
 
-    const reticleRadius = 32.0;
     canvas.drawCircle(Offset(centerX, centerY), reticleRadius, reticlePaint);
 
     // Crosshair ticks
-    const tickLen = 8.0;
+    const tickLen = 10.0;
     canvas.drawLine(
       Offset(centerX - reticleRadius - tickLen, centerY),
       Offset(centerX - reticleRadius, centerY),
@@ -647,65 +757,115 @@ class _PhotosphereGuidePainter extends CustomPainter {
       reticlePaint,
     );
 
-    // Project target angle onto screen coordinates
-    // Approximate phone camera field of view: 60° horizontal, 80° vertical
+    // Countdown / Hold-steady progress ring around the reticle
+    if (isAligned && alignmentProgress > 0.0) {
+      final timerArcPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6.0
+        ..strokeCap = StrokeCap.round
+        ..color = const Color(0xFF00E676);
+
+      const sweepAngle = 2 * pi;
+      canvas.drawArc(
+        Rect.fromCircle(center: Offset(centerX, centerY), radius: reticleRadius + 4),
+        -pi / 2,
+        sweepAngle * alignmentProgress,
+        false,
+        timerArcPaint,
+      );
+    }
+
+    // --- 2. Project Target Angle onto Screen ---
+    // Phone camera FOV: ~60° horizontal, ~80° vertical
     final screenDx = (deltaYaw / 30.0) * (size.width / 2);
     final screenDy = -(deltaPitch / 40.0) * (size.height / 2);
 
     final targetX = centerX + screenDx;
     final targetY = centerY + screenDy;
 
-    final isInsideScreen = targetX >= 24 &&
-        targetX <= size.width - 24 &&
-        targetY >= 100 &&
-        targetY <= size.height - 140;
+    final isInsideScreen = targetX >= 36 &&
+        targetX <= size.width - 36 &&
+        targetY >= 110 &&
+        targetY <= size.height - 150;
 
     if (isInsideScreen) {
-      // Draw target sphere / dot inside screen
+      // --- Draw Target Dot (Large, High-Contrast Glowing Orb) ---
+      const dotRadius = 24.0;
+
+      // Outer glowing halo
+      final haloPaint = Paint()
+        ..style = PaintingStyle.fill
+        ..color = (isAligned ? const Color(0xFF00E676) : const Color(0xFFFFB300))
+            .withValues(alpha: 0.35);
+      canvas.drawCircle(Offset(targetX, targetY), dotRadius + 14.0, haloPaint);
+
+      // Outer sharp border ring
+      final outerRingPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0
+        ..color = isAligned ? const Color(0xFF00E676) : Colors.white;
+      canvas.drawCircle(Offset(targetX, targetY), dotRadius, outerRingPaint);
+
+      // Inner solid luminous circle
       final dotPaint = Paint()
         ..style = PaintingStyle.fill
-        ..color = isAligned
-            ? Colors.greenAccent
-            : const Color(0xFF00D2C4).withValues(alpha: 0.9);
+        ..color = isAligned ? const Color(0xFF00E676) : const Color(0xFFFFB300);
+      canvas.drawCircle(Offset(targetX, targetY), dotRadius - 2.0, dotPaint);
 
-      final haloPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..color = isAligned
-            ? Colors.greenAccent.withValues(alpha: 0.6)
-            : const Color(0xFF00D2C4).withValues(alpha: 0.4);
+      // Draw photo number inside target dot
+      final textSpan = TextSpan(
+        text: '$photoNumber',
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+        ),
+      );
+      final textPainter = TextPainter(
+        text: textSpan,
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(targetX - textPainter.width / 2, targetY - textPainter.height / 2),
+      );
 
-      canvas.drawCircle(Offset(targetX, targetY), 16.0, haloPaint);
-      canvas.drawCircle(Offset(targetX, targetY), 9.0, dotPaint);
-
-      // Line connecting center reticle to target dot
+      // Guiding connecting line between center and target dot
       if (!isAligned) {
         final linePaint = Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2
-          ..color = const Color(0xFF00D2C4).withValues(alpha: 0.35);
+          ..strokeWidth = 2.0
+          ..color = const Color(0xFFFFB300).withValues(alpha: 0.6);
         canvas.drawLine(Offset(centerX, centerY), Offset(targetX, targetY), linePaint);
       }
     } else {
-      // Draw indicator arrow at the edge of the screen pointing to off-screen target
+      // --- Target is Off-Screen: Draw Large Glowing Direction Indicator ---
       final angle = atan2(screenDy, screenDx);
-      final edgeRadius = min(size.width / 2 - 32, size.height / 2 - 120);
+      final edgeRadius = min(size.width / 2 - 40, size.height / 2 - 140);
       final arrowX = centerX + edgeRadius * cos(angle);
       final arrowY = centerY + edgeRadius * sin(angle);
 
+      // Arrow background circle
+      final circleBgPaint = Paint()
+        ..style = PaintingStyle.fill
+        ..color = const Color(0xFFFFB300);
+      canvas.drawCircle(Offset(arrowX, arrowY), 20.0, circleBgPaint);
+
+      // Arrow path
       final arrowPaint = Paint()
         ..style = PaintingStyle.fill
-        ..color = const Color(0xFF00D2C4);
+        ..color = Colors.black;
 
       canvas.save();
       canvas.translate(arrowX, arrowY);
       canvas.rotate(angle);
 
       final path = Path()
-        ..moveTo(14, 0)
-        ..lineTo(-8, -10)
-        ..lineTo(-4, 0)
-        ..lineTo(-8, 10)
+        ..moveTo(10, 0)
+        ..lineTo(-6, -8)
+        ..lineTo(-3, 0)
+        ..lineTo(-6, 8)
         ..close();
 
       canvas.drawPath(path, arrowPaint);
@@ -715,4 +875,63 @@ class _PhotosphereGuidePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PhotosphereGuidePainter oldDelegate) => true;
+}
+
+class _RadarPainter extends CustomPainter {
+  final int photosPerRow;
+  final int currentPhoto;
+  final int capturedCount;
+  final double currentYaw;
+
+  _RadarPainter({
+    required this.photosPerRow,
+    required this.currentPhoto,
+    required this.capturedCount,
+    required this.currentYaw,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 5;
+
+    // Outer circle
+    final linePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0
+      ..color = Colors.white24;
+    canvas.drawCircle(center, radius, linePaint);
+
+    // Current camera heading line
+    final headingAngle = (currentYaw - 90) * pi / 180;
+    final headingPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..color = const Color(0xFF00E5FF);
+    canvas.drawLine(
+      center,
+      Offset(center.dx + radius * cos(headingAngle), center.dy + radius * sin(headingAngle)),
+      headingPaint,
+    );
+
+    // Photo dots around 360 ring
+    for (int i = 0; i < photosPerRow; i++) {
+      final angle = (i * (360.0 / photosPerRow) - 90) * pi / 180;
+      final dotPos = Offset(center.dx + radius * cos(angle), center.dy + radius * sin(angle));
+
+      final paint = Paint()..style = PaintingStyle.fill;
+      if (i < capturedCount) {
+        paint.color = const Color(0xFF00E676); // Already captured: green
+      } else if (i == currentPhoto) {
+        paint.color = const Color(0xFFFFB300); // Current target: amber
+      } else {
+        paint.color = Colors.white38; // Remaining: dim white
+      }
+
+      canvas.drawCircle(dotPos, i == currentPhoto ? 3.5 : 2.0, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RadarPainter oldDelegate) => true;
 }
